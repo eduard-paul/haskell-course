@@ -1,8 +1,5 @@
 import Data.Char
- 
-{- Выражение не очень удобно вычислять сразу при вводе, поэтому разумно 
-сохранить его в новый тип данных, которое представить в виде синтаксического дерева.
-Тип выражения параметризован типом чисел, которые в нём могут храниться.-}
+
 data Expr a
     = Const a --константы
     | Binary (Expr a) Operator (Expr a) --операторы
@@ -13,9 +10,7 @@ instance Num q => Num (Expr q) where
     a + b = Binary a Plus b
     a * b = Binary a Mul b
     a - b = Binary a Sub b
-    --a / b = Binary a Div b
     fromInteger a = Const (fromInteger a)
-
 
 data Operator = Plus | Mul | Sub | Div | Sin | Cos deriving (Eq)
 
@@ -32,60 +27,55 @@ instance Show Operator where
     show Sub = "-"
     show Mul = "*"
     show Div = "/"
-    show Sin = "sin"
-    show Cos = "cos"
+    show Sin = "sin "
+    show Cos = "cos "
 
 instance Show a => Show (Expr a) where
     show (Const c) = show c
     show (Binary a op b) = "(" ++ (show a) ++ " " ++ (show op) ++ " " ++ (show b) ++ ")"
-    show (Unary op a) = (show op) ++ "(" ++ (show a) ++ ")"
-    show (VarNode s) = show s
+    show (Unary op a) = (show op) ++ (show a)
+    show (VarNode s) = ""++s
 
-{- Выражение можно парсить. Проще всего сделать это методом рекурсивного спуска.
-(https://ru.wikipedia.org/wiki/Метод_рекурсивного_спуска)
--}
-parseExpr :: String -> Expr a
-parseExpr = undefined
-{- Разбор выражения можно сделать и любым другим методом, например, перегонкой через
-обратную польскую запись. -}
+doBinOp :: Floating a => Expr a -> Operator -> Expr a -> Expr a
+doBinOp (Const a) op (Const b)
+    | op == Plus = Const (a + b)
+    | op == Mul =  Const (a * b)
+    | op == Sub =  Const (a - b)
+    | op == Div =  Const (a / b)
+doBinOp a op b = Binary a op b
 
-{-Бонус 2: выражение также можно выводить.
-instance Show a => Show (Expr a) where
-    show (Const c) = show c
-    show <...>
-    
-Но для этого придётся хранить функции в символьном виде:
-data Operator = Plus | <...>
--}
-    
-{- Выражение нужно уметь вычислять. -}
-calcExpr :: Num a => Expr a -> a
-calcExpr (Const a) = a --константа вычисляется в её значение
-calcExpr (Binary a op b)
-    | op == Plus = (calcExpr a) + (calcExpr b)
-    | op == Mul = (calcExpr a) * (calcExpr b)
-    | op == Sub = (calcExpr a) - (calcExpr b)
+doUnOp :: Floating a => Operator -> Expr a -> Expr a
+doUnOp op (Const a)
+    | op == Sin = Const (sin a)
+    | op == Cos =  Const (cos a)
+    | op == Sub =  Const (-a)
+doUnOp op a = Unary op a
 
-calcExprFract :: Fractional a => Expr a -> a
-calcExprFract (Const a) = a --константа вычисляется в её значение
-calcExprFract (Binary a op b)
-    | op == Plus = (calcExprFract a) + (calcExprFract b)
-    | op == Mul = (calcExprFract a) * (calcExprFract b)
-    | op == Sub = (calcExprFract a) - (calcExprFract b)
-    | op == Div = (calcExprFract a) / (calcExprFract b)
+calcExpr :: Floating a => Expr a -> Expr a
+calcExpr (Const a) = Const a --константа вычисляется в её значение
+calcExpr (VarNode a) = VarNode a
+calcExpr (Binary a op b) 
+    | op == Plus = doBinOp (calcExpr a) Plus (calcExpr b)
+    | op == Mul = doBinOp (calcExpr a) Mul (calcExpr b)
+    | op == Sub = doBinOp (calcExpr a) Sub (calcExpr b)
+    | op == Div = doBinOp (calcExpr a) Div (calcExpr b)
+calcExpr (Unary op a)
+    | op == Sin = doUnOp Sin (calcExpr a)
+    | op == Cos = doUnOp Cos (calcExpr a)
+    | op == Sub = doUnOp Sub (calcExpr a)
+    | op == Plus = calcExpr a
 
-calcExprFloat :: Floating a => Expr a -> a
-calcExprFloat (Const a) = a --константа вычисляется в её значение
-calcExprFloat (Binary a op b)
-    | op == Plus = (calcExprFloat a) + (calcExprFloat b)
-    | op == Mul = (calcExprFloat a) * (calcExprFloat b)
-    | op == Sub = (calcExprFloat a) - (calcExprFloat b)
-    | op == Div = (calcExprFloat a) / (calcExprFloat b)
-calcExprFloat (Unary op a)
-    | op == Sin = sin (calcExprFloat a)
-    | op == Cos = cos (calcExprFloat a)
-    | op == Sub = -(calcExprFloat a)
-    | op == Plus = calcExprFloat a
+replace :: Floating a => (String, a) -> Expr a -> Expr a
+replace _ (Const a) = Const a
+replace (var, val) (VarNode v)
+  | var == v = Const val
+  | otherwise = VarNode v
+replace x (Binary a op b) = Binary (replace x a) op (replace x b)
+replace x (Unary op a) = Unary op (replace x a)
+
+calculate :: Floating a => [(String, a)] -> Expr a -> Expr a
+calculate [] a = calcExpr a
+calculate (x:xs) a = calculate xs $ replace x a
 
 {- Бонус 1: вычислять выражение с переменными.
 Для этого нужно добавить возможность хранить переменные в выражении.
@@ -96,73 +86,6 @@ calcExpr :: Num a => [(Var, a)] -> Expr a -> a
 Или же выводить выражение недовычисленным (бонус 1c):
 calcExpr :: Num a => [(Var, a)] -> Expr a -> Expr a
 -}
-
-{- 
-type Entry = (String, Operator)
-type Register = [Entry]
-
-operatorRegister :: Register
-operatorRegister = [
-                ("+", Plus),
-                ("-", Sub),
-                ("/", Div),
-                ("*", Mul)
-            ]
-            
-            
---calculate :: String -> Double
---calculate = eval operatorRegister . words
-            
---eval :: Register -> [String] -> Double
---eval _ [number] = read number
---eval ((operator, function):rest) unparsed =
---    case span (/=operator) unparsed of
---        (_, []) -> eval rest unparsed
---        (beforeOperator, afterOperator) -> 
---            function
---                (eval operatorRegister beforeOperator)
---                (eval operatorRegister $ drop 1 afterOperator)
-
-toExpr :: (Floating a, Read a) => String -> Expr a
-toExpr =  www operatorRegister . words
-
-qqq :: (Floating a, Read a) => Register -> [String] -> Expr a
-qqq _ [number] = Const (read number)
-qqq ((operator, function):rest) unparsed =
-    case span (/=operator) unparsed of
-        (_, []) -> qqq rest unparsed
-        (beforeOperator, afterOperator) -> 
-                Binary 
-                    (qqq operatorRegister beforeOperator)
-                    function
-                    (qqq operatorRegister $ drop 1 afterOperator)
-
-join:: [String] -> String
-join [] = []
-join list = (head list) ++ (join (tail list))
-
---www :: (Floating a, Read a) => Register -> [String] -> Expr a
---www _ [number] = Const (read number)
---www reg unparsed =
---    case span (/=")") unparsed of
---        (_, []) -> qqq reg unparsed
---        (beforeOperator, afterOperator) -> 
---            www reg $ ((reverse $ drop 1 left)++(words $ show $ qqq reg $ reverse middle))++(drop 1 afterOperator) where
---                (middle,left) = span (/="(") (reverse beforeOperator)
- 
-www :: (Floating a, Read a) => Register -> [String] -> Expr a
-www _ [number] = Const (read number)
-www reg unparsed =
-    case span (/=")") unparsed of
-        (_, []) -> qqq reg unparsed
-        (beforeOperator, afterOperator) -> 
-            www reg $ ((reverse $ drop 1 left)++([show $ calcExprFloat $ qqq reg $ reverse middle]))++(drop 1 afterOperator) where
-                (middle,left) = span (/="(") (reverse beforeOperator)
-
--}
-
-{-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////-}   
-
 
 data Token a 
     = TokOp Operator
@@ -178,17 +101,18 @@ instance Num a => Num (Token a) where
 instance Fractional a => Fractional (Token a) where
     fromRational a = TokNum (fromRational a)
 
-
-operator :: Char -> Operator
-operator c | c == '+' = Plus
-           | c == '-' = Sub
-           | c == '*' = Mul
-           | c == '/' = Div
+operator :: String -> Operator
+operator c | c == "+" = Plus
+           | c == "-" = Sub
+           | c == "*" = Mul
+           | c == "/" = Div
+           | c == "sin" = Sin
+           | c == "cos" = Cos
  
 tokenize :: (Floating a, Read a) => String -> [Token a]
 tokenize [] = []
 tokenize (c : cs) 
-    | elem c "+-*/" = TokOp (operator c) : tokenize cs
+    | elem c "+-*/" = TokOp (operator $ c:"") : tokenize cs
     | c == '('  = TokLParen : tokenize cs
     | c == ')'  = TokRParen : tokenize cs
     | isDigit c = number c cs
@@ -196,21 +120,16 @@ tokenize (c : cs)
     | isSpace c = tokenize cs
     | otherwise = error $ "Cannot tokenize " ++ [c]
 
+
 identifier :: (Floating a, Read a) => Char -> String -> [Token a]
 identifier c cs = let (name, cs') = span isAlphaNum cs in
-                  TokIdent (c:name) : tokenize cs'
+                  if elem (c:name) ["sin","cos"] then TokOp (operator (c:name)) : tokenize cs'
+                  else TokIdent (c:name) : tokenize cs'
 
 number :: (Floating a, Read a) => Char -> String -> [Token a]
 number c cs = 
    let (digs, cs') = span isDigit cs in
    TokNum (read (c : digs)) : tokenize cs'
-
-
---data Expr = Binary Operator Expr Expr
---          | Unary Operator Expr
---          | Const Double
---          | VarNode String
---    deriving Show
 
 lookAhead :: (Floating a, Read a) => [Token a] -> Token a
 lookAhead [] = TokEnd
@@ -245,7 +164,7 @@ factor toks =
    case lookAhead toks of
       (TokNum x)     -> (Const x, accept toks)
       (TokIdent str) -> (VarNode str, accept toks)
-      (TokOp op) | elem op [Plus, Sub] -> 
+      (TokOp op) | elem op [Plus, Sub, Sin, Cos] -> 
             let (facExpr, toks') = factor (accept toks) 
             in (Unary op facExpr, toks')
       TokLParen      -> 
@@ -262,3 +181,6 @@ parse toks = let (tree, toks') = expression toks
                if null toks' 
                then tree
                else error $ "Leftover tokens: " ++ show toks'
+
+parseExpr :: (Show a, Read a, Eq a, Floating a) => String -> Expr a
+parseExpr a = parse $ tokenize a
